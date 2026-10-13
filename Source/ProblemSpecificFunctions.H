@@ -100,6 +100,18 @@ struct DefaultProblemSpecificFunctions
 
   AMREX_GPU_DEVICE
   AMREX_FORCE_INLINE
+  static void set_eb_wall_temperature(
+    const amrex::Real /*x*/,
+    const amrex::Real /*y*/,
+    const amrex::Real /*z*/,
+    amrex::Real& /*Twall*/,
+    ProbParmDevice const& /*prob_parm*/) noexcept
+  {
+    // Leave the prescribed pelec.eb_boundary_T unchanged by default.
+  }
+
+  AMREX_GPU_DEVICE
+  AMREX_FORCE_INLINE
   static bool problem_eb_state(
     amrex::GeometryData const& /*geomdata*/,
     const amrex::Real /*vf*/,

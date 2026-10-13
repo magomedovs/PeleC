@@ -74,6 +74,14 @@ PeleC::initialize_eb2_structs()
     amrex::Abort();
   }
 
+  if (eb_isothermal && (diffuse_temp || diffuse_enth)) {
+    // EB initialization precedes initData/post_restart, including their copy
+    // of the problem parameters to the device.
+    amrex::Gpu::copy(
+      amrex::Gpu::hostToDevice, h_prob_parm_device, h_prob_parm_device + 1,
+      d_prob_parm_device);
+  }
+
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -158,8 +166,25 @@ PeleC::initialize_eb2_structs()
       sv_eb_flux[iLocal].define(sv_eb_bndry_grad_stencil[iLocal], NVAR);
       sv_eb_bcval[iLocal].define(sv_eb_bndry_grad_stencil[iLocal], QVAR);
 
-      if (eb_isothermal && (diffuse_temp || diffuse_enth)) {
-        sv_eb_bcval[iLocal].setVal(eb_boundary_T, QTEMP);
+      if (eb_isothermal && (diffuse_temp || diffuse_enth) && ncutcells > 0) {
+        const auto prob_lo = geom.ProbLoArray();
+        const auto domain_lo = geom.Domain().smallEnd();
+        const auto* prob_parm = d_prob_parm_device;
+        const auto* ebg = sv_eb_bndry_geom[iLocal].data();
+        auto* T_bcval = sv_eb_bcval[iLocal].dataPtr(QTEMP);
+        const amrex::Real default_Twall = eb_boundary_T;
+        amrex::ParallelFor(ncutcells, [=] AMREX_GPU_DEVICE(int L) noexcept {
+          amrex::Real x[3] = {0.0, 0.0, 0.0};
+          for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            x[dir] = prob_lo[dir] + (ebg[L].iv[dir] - domain_lo[dir] + 0.5 +
+                                     ebg[L].eb_centroid[dir]) *
+                                      dx[dir];
+          }
+          amrex::Real Twall = default_Twall;
+          ProblemSpecificFunctions::set_eb_wall_temperature(
+            x[0], x[1], x[2], Twall, *prob_parm);
+          T_bcval[L] = Twall;
+        });
       }
       if (eb_noslip && diffuse_vel) {
 
